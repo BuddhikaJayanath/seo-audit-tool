@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SEO Audit Tool – Free Website Analysis</title>
+  <meta name="description" content="Free SEO audit tool. Analyze any website's on-page SEO, meta tags, headings, links, and performance instantly." />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+</head>
+<body>
+
+  <!-- HERO -->
+  <header class="hero">
+    <div class="container">
+      <div class="badge">Free · No sign-up required</div>
+      <h1>SEO Audit <span class="accent">Tool</span></h1>
+      <p class="tagline">Paste any URL. Get a full on-page SEO report in seconds.</p>
+
+      <div class="search-box">
+        <div class="input-wrap">
+          <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <input
+            type="url"
+            id="urlInput"
+            placeholder="https://example.com"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </div>
+        <button id="auditBtn" onclick="runAudit()">
+          Analyze
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+        </button>
+      </div>
+      <p class="hint">Works on any public URL — blog, shop, portfolio, SaaS</p>
+    </div>
+  </header>
+
+  <!-- FEATURES STRIP -->
+  <section class="features-strip">
+    <div class="container features-grid">
+      <div class="feature">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z"/></svg>
+        <span>Meta Tags</span>
+      </div>
+      <div class="feature">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        <span>Heading Structure</span>
+      </div>
+      <div class="feature">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M13.828 10.172a4 4 0 0 0-5.656 0l-4 4a4 4 0 1 0 5.656 5.656l1.102-1.101"/><path d="m10.172 13.828 4-4a4 4 0 1 1 5.656 5.656l-1.1 1.1"/></svg>
+        <span>Link Analysis</span>
+      </div>
+      <div class="feature">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+        <span>Image Audit</span>
+      </div>
+      <div class="feature">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        <span>Performance</span>
+      </div>
+      <div class="feature">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span>Security Check</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- LOADING STATE -->
+  <section id="loadingSection" class="loading-section hidden">
+    <div class="container">
+      <div class="loader-wrap">
+        <div class="spinner"></div>
+        <p id="loadingText">Fetching page data…</p>
+        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- RESULTS -->
+  <section id="resultsSection" class="results-section hidden">
+    <div class="container">
+
+      <!-- Score Card -->
+      <div class="score-card">
+        <div class="score-left">
+          <div class="score-circle">
+            <svg viewBox="0 0 120 120" class="score-ring">
+              <circle cx="60" cy="60" r="52" class="ring-bg"/>
+              <circle cx="60" cy="60" r="52" class="ring-fill" id="scoreRing"/>
+            </svg>
+            <div class="score-number" id="scoreNumber">–</div>
+          </div>
+          <div class="score-label">SEO Score</div>
+        </div>
+        <div class="score-right">
+          <h2 id="auditedUrl" class="audited-url"></h2>
+          <div class="summary-pills" id="summaryPills"></div>
+          <p id="scoreDesc" class="score-desc"></p>
+        </div>
+      </div>
+
+      <!-- Checks Grid -->
+      <div class="checks-grid" id="checksGrid"></div>
+
+      <!-- Export -->
+      <div class="export-row">
+        <button class="btn-secondary" onclick="exportJSON()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export JSON
+        </button>
+        <button class="btn-secondary" onclick="copyReport()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copy Report
+        </button>
+        <button class="btn-secondary" onclick="printReport()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          Print
+        </button>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="how-section" id="howSection">
+    <div class="container">
+      <h2 class="section-title">How it works</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">1</div>
+          <h3>Enter your URL</h3>
+          <p>Paste any public website address into the search bar above.</p>
+        </div>
+        <div class="step-arrow">→</div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <h3>We fetch &amp; parse</h3>
+          <p>The tool reads your page's HTML in real time via a CORS proxy.</p>
+        </div>
+        <div class="step-arrow">→</div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <h3>Get your report</h3>
+          <p>Receive a scored checklist with fixes, warnings, and passes.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="container">
+      <p>Built with ♥ · Open source on <a href="https://github.com" target="_blank" rel="noopener">GitHub</a> · Free forever</p>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
