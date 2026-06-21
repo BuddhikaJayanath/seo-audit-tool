@@ -3,7 +3,23 @@
    All analysis runs client-side via CORS proxy
 ═══════════════════════════════════════════ */
 
-const PROXY = 'https://api.allorigins.win/get?url=';
+// Multiple CORS proxies — tried in order until one works
+const PROXIES = [
+  {
+    url: u => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
+    extract: data => data.contents,
+  },
+  {
+    url: u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+    extract: data => data,   // returns raw text
+    raw: true,
+  },
+  {
+    url: u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+    extract: data => data,
+    raw: true,
+  },
+];
 
 let lastReport = null;
 
@@ -30,7 +46,7 @@ async function runAudit() {
     lastReport = report;
     renderResults(report, url);
   } catch (err) {
-    alert('Could not fetch the page. Make sure the URL is publicly accessible.\n\n' + err.message);
+    alert('Could not fetch the page.\n\n' + err.message);
     console.error(err);
   } finally {
     setLoading(false);
@@ -42,16 +58,49 @@ document.getElementById('urlInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') runAudit();
 });
 
-// ─── Fetch via CORS proxy ─────────────────
+// ─── Fetch via CORS proxy (with fallbacks) ─
 async function fetchPage(url) {
-  setProgress(15, 'Connecting to proxy…');
-  const res = await fetch(PROXY + encodeURIComponent(url));
-  if (!res.ok) throw new Error('Proxy returned ' + res.status);
-  setProgress(50, 'Downloading page…');
-  const data = await res.json();
-  if (!data.contents) throw new Error('Empty response from proxy');
-  setProgress(75, 'Parsing HTML…');
-  return data.contents;
+  let lastErr = null;
+
+  for (let i = 0; i < PROXIES.length; i++) {
+    const proxy = PROXIES[i];
+    setProgress(15 + i * 15, `Trying proxy ${i + 1} of ${PROXIES.length}…`);
+
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
+      const res = await fetch(proxy.url(url), { signal: controller.signal });
+      clearTimeout(timer);
+
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+
+      let html;
+      if (proxy.raw) {
+        html = await res.text();
+      } else {
+        const data = await res.json();
+        html = proxy.extract(data);
+      }
+
+      if (!html || html.length < 100) throw new Error('Empty or too-short response');
+
+      setProgress(75, 'Parsing HTML…');
+      return html;
+
+    } catch (err) {
+      lastErr = err;
+      console.warn(`Proxy ${i + 1} failed:`, err.message);
+    }
+  }
+
+  throw new Error(
+    'All proxies failed. This usually means:\n' +
+    '• The site blocks external requests\n' +
+    '• The URL is not publicly accessible\n' +
+    '• Try a different URL (e.g. https://example.com)\n\n' +
+    'Last error: ' + lastErr?.message
+  );
 }
 
 function parseHTML(html) {
