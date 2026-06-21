@@ -1,43 +1,26 @@
 /* ═══════════════════════════════════════════
    SEO Audit Engine — app.js
-   All analysis runs client-side via CORS proxy
+   Fetches pages via reliable CORS proxies
 ═══════════════════════════════════════════ */
-
-// Multiple CORS proxies — tried in order until one works
-const PROXIES = [
-  {
-    url: u => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
-    extract: data => data.contents,
-  },
-  {
-    url: u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-    extract: data => data,   // returns raw text
-    raw: true,
-  },
-  {
-    url: u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-    extract: data => data,
-    raw: true,
-  },
-];
 
 let lastReport = null;
 
 // ─── Entry Point ───────────────────────────
 async function runAudit() {
   const rawUrl = document.getElementById('urlInput').value.trim();
-  if (!rawUrl) { alert('Please enter a URL to audit.'); return; }
+  if (!rawUrl) { showError('Please enter a URL to audit.'); return; }
 
   let url = rawUrl;
   if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
 
   try { new URL(url); } catch {
-    alert('Please enter a valid URL (e.g. https://example.com)');
+    showError('Please enter a valid URL (e.g. https://example.com)');
     return;
   }
 
   setLoading(true);
   hideResults();
+  clearError();
 
   try {
     const html = await fetchPage(url);
@@ -46,7 +29,7 @@ async function runAudit() {
     lastReport = report;
     renderResults(report, url);
   } catch (err) {
-    alert('Could not fetch the page.\n\n' + err.message);
+    showError(err.message);
     console.error(err);
   } finally {
     setLoading(false);
@@ -58,49 +41,98 @@ document.getElementById('urlInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') runAudit();
 });
 
-// ─── Fetch via CORS proxy (with fallbacks) ─
-async function fetchPage(url) {
-  let lastErr = null;
+// ─── Fetch with multiple strategies ────────
+async function fetchPage(targetUrl) {
 
-  for (let i = 0; i < PROXIES.length; i++) {
-    const proxy = PROXIES[i];
-    setProgress(15 + i * 15, `Trying proxy ${i + 1} of ${PROXIES.length}…`);
+  // Strategy list — each returns HTML string or throws
+  const strategies = [
 
+    // 1. allorigins (JSON wrapper)
+    async () => {
+      setProgress(20, 'Trying proxy 1…');
+      const r = await fetchWithTimeout(
+        `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&timestamp=${Date.now()}`,
+        12000
+      );
+      if (!r.ok) throw new Error('allorigins HTTP ' + r.status);
+      const j = await r.json();
+      if (!j.contents) throw new Error('allorigins: empty contents');
+      return j.contents;
+    },
+
+    // 2. corsproxy.io (raw)
+    async () => {
+      setProgress(40, 'Trying proxy 2…');
+      const r = await fetchWithTimeout(
+        `https://corsproxy.io/?url=${encodeURIComponent(targetUrl)}`,
+        12000
+      );
+      if (!r.ok) throw new Error('corsproxy HTTP ' + r.status);
+      return await r.text();
+    },
+
+    // 3. htmldriven cors-anywhere clone
+    async () => {
+      setProgress(55, 'Trying proxy 3…');
+      const r = await fetchWithTimeout(
+        `https://thingproxy.freeboard.io/fetch/${targetUrl}`,
+        12000
+      );
+      if (!r.ok) throw new Error('thingproxy HTTP ' + r.status);
+      return await r.text();
+    },
+
+    // 4. codetabs
+    async () => {
+      setProgress(70, 'Trying proxy 4…');
+      const r = await fetchWithTimeout(
+        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`,
+        12000
+      );
+      if (!r.ok) throw new Error('codetabs HTTP ' + r.status);
+      return await r.text();
+    },
+  ];
+
+  const errors = [];
+  for (const strategy of strategies) {
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 10000); // 10s timeout
-
-      const res = await fetch(proxy.url(url), { signal: controller.signal });
-      clearTimeout(timer);
-
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-
-      let html;
-      if (proxy.raw) {
-        html = await res.text();
-      } else {
-        const data = await res.json();
-        html = proxy.extract(data);
+      const html = await strategy();
+      if (html && html.length > 200) {
+        setProgress(80, 'Parsing HTML…');
+        return html;
       }
-
-      if (!html || html.length < 100) throw new Error('Empty or too-short response');
-
-      setProgress(75, 'Parsing HTML…');
-      return html;
-
-    } catch (err) {
-      lastErr = err;
-      console.warn(`Proxy ${i + 1} failed:`, err.message);
+      errors.push('Response too short');
+    } catch (e) {
+      errors.push(e.message);
+      console.warn('Strategy failed:', e.message);
     }
   }
 
+  // All failed — show helpful message
   throw new Error(
-    'All proxies failed. This usually means:\n' +
-    '• The site blocks external requests\n' +
-    '• The URL is not publicly accessible\n' +
-    '• Try a different URL (e.g. https://example.com)\n\n' +
-    'Last error: ' + lastErr?.message
+    `Could not fetch "${targetUrl}".\n\n` +
+    `All ${strategies.length} proxies failed. Common reasons:\n` +
+    `• The website blocks automated requests\n` +
+    `• The URL requires login\n` +
+    `• Try a simpler URL like: https://example.com\n\n` +
+    `Proxy errors:\n` + errors.map((e, i) => `  ${i+1}. ${e}`).join('\n')
   );
+}
+
+// Fetch with timeout
+async function fetchWithTimeout(url, ms) {
+  const ctrl = new AbortController();
+  const id = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    });
+    return res;
+  } finally {
+    clearTimeout(id);
+  }
 }
 
 function parseHTML(html) {
@@ -333,7 +365,6 @@ function renderResults(report, url) {
   // Check cards
   const grid = document.getElementById('checksGrid');
   grid.innerHTML = '';
-  // Sort: fail → warn → pass
   const sorted = [...checks].sort((a, b) => {
     const order = { fail: 0, warn: 1, pass: 2 };
     return order[a.status] - order[b.status];
@@ -386,6 +417,25 @@ function hideResults() {
 function setProgress(pct, text) {
   document.getElementById('progressFill').style.width = pct + '%';
   document.getElementById('loadingText').textContent = text;
+}
+
+function showError(msg) {
+  // Remove old error if any
+  clearError();
+  const div = document.createElement('div');
+  div.id = 'errorBox';
+  div.style.cssText = `
+    max-width:640px; margin:16px auto 0; padding:14px 18px;
+    background:#fee2e2; border:1px solid #fca5a5; border-radius:10px;
+    color:#991b1b; font-size:14px; white-space:pre-wrap; line-height:1.6;
+  `;
+  div.innerHTML = `<strong>⚠ Error</strong><br>${escapeHtml(msg)}`;
+  document.querySelector('.search-box').insertAdjacentElement('afterend', div);
+}
+
+function clearError() {
+  const old = document.getElementById('errorBox');
+  if (old) old.remove();
 }
 
 function escapeHtml(str) {
